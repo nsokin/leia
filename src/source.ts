@@ -31,6 +31,20 @@ export type YtOptions = {
 
 const UNAVAILABLE = /^\[?(private|deleted|unavailable) video\]?$/i
 
+// Some extractors (e.g. archive.org) hand back ids that already carry a media
+// extension, e.g. "adventuresoftomsawyer_00_twain_128kb.mp3", or a path-like
+// prefix from a flat-playlist listing, e.g. "item_name/adventuresoftomsawyer_00_twain_128kb.mp3".
+// Neither survives being reused as a filename, and neither matches the id
+// yt-dlp resolves for itself once it downloads the track individually — so
+// fetchMp3 must never hand a raw id to yt-dlp's own %(id)s output template.
+export function stripMediaExtension(id: string): string {
+  return id.replace(/\.(mp3|m4a|wav|flac|ogg|opus|aac|webm)$/i, '')
+}
+
+export function sanitizeFilename(id: string): string {
+  return stripMediaExtension(id).replace(/[^A-Za-z0-9._-]+/g, '_')
+}
+
 /** Version strings for the external tools, or null when one is not installed. */
 export async function toolVersions(): Promise<{ ytDlp: string | null; ffmpeg: string | null }> {
   const probe = (command: string, args: string[]): Promise<string | null> =>
@@ -180,7 +194,8 @@ export async function fetchMp3(
   // The quality settings go in the filename so switching bitrate does not
   // silently reuse a file encoded at the old one.
   const suffix = `${options.bitrate ? `-${options.bitrate}k` : ''}${options.mono ? '-mono' : ''}`
-  const target = path.join(workdir, `${track.id}${suffix}.mp3`)
+  const safeName = sanitizeFilename(track.id)
+  const target = path.join(workdir, `${safeName}${suffix}.mp3`)
 
   if (existsSync(target) && (await stat(target)).size > 0) {
     status(`  cached  ${track.title}`)
@@ -206,7 +221,7 @@ export async function fetchMp3(
     '--fragment-retries',
     '10',
     '--output',
-    path.join(workdir, `%(id)s${suffix}.%(ext)s`),
+    path.join(workdir, `${safeName}${suffix}.%(ext)s`),
     ...cookieArgs(options),
     ...(options.extraArgs ?? []),
     track.url,
