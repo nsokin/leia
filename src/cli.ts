@@ -50,6 +50,7 @@ Options
   --title <text>         Card title (defaults to the playlist title)
   --icon <png|yoto:#id>  16x16 PNG to upload, or an existing Yoto icon ref
   --icons <dir>          Per-chapter 16x16 PNGs, matched to tracks by filename order
+  --cover <jpg|png>      Cover art shown for the card in the app, card-shaped (portrait)
   --card <cardId>        Update this card instead of creating a new one
   --append               Add to what the saved manifest already holds
   --strip <regex>        Cut boilerplate out of chapter titles, case-insensitive
@@ -71,6 +72,7 @@ type Options = {
   title?: string
   icon?: string
   icons?: string
+  cover?: string
   card?: string
   append: boolean
   workdir: string
@@ -106,6 +108,7 @@ function parse(): Parsed {
       title: { type: 'string' },
       icon: { type: 'string' },
       icons: { type: 'string' },
+      cover: { type: 'string' },
       card: { type: 'string' },
       append: { type: 'boolean', default: false },
       workdir: { type: 'string', default: './downloads' },
@@ -164,6 +167,7 @@ function parse(): Parsed {
       title: values.title,
       icon: values.icon,
       icons: values.icons,
+      cover: values.cover,
       card: values.card,
       append: values.append === true,
       workdir: path.resolve(values.workdir ?? './downloads'),
@@ -329,6 +333,18 @@ async function resolveIcon(client: YotoClient, icon: string | undefined): Promis
   return `yoto:#${mediaId}`
 }
 
+async function resolveCover(client: YotoClient, cover: string | undefined): Promise<string | undefined> {
+  if (!cover) return undefined
+  const ext = path.extname(cover).toLowerCase()
+  const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null
+  if (!contentType) throw new Error(`--cover must be a .jpg or .png file, got "${cover}"`)
+
+  const image = await readFile(path.resolve(cover))
+  const mediaUrl = await client.uploadCoverImage(image, contentType)
+  info(`Uploaded cover image`)
+  return mediaUrl
+}
+
 async function main(): Promise<void> {
   const { url, options, login, logoutOnly, whoami, doctor, help } = parse()
 
@@ -484,6 +500,7 @@ async function main(): Promise<void> {
   const client = new YotoClient(getToken)
   const account = accountFromToken(await getToken())
   const icon = await resolveIcon(client, options.icon)
+  const cover = await resolveCover(client, options.cover)
   const chapterIcons = options.icons
     ? await resolveChapterIcons(client, path.resolve(options.icons), selected.length, account)
     : null
@@ -568,6 +585,7 @@ async function main(): Promise<void> {
         fileSize: totalBytes,
         readableFileSize: Math.round((totalBytes / 1024 / 1024) * 10) / 10,
       },
+      ...(cover ? { cover: { imageL: cover } } : {}),
     },
   })
 

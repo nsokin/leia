@@ -263,6 +263,16 @@ icons a manifest already has instead of clearing them.
 node src/cli.ts "<url>" --all --spoken --title "Peter Rabbit" --icons ./icons
 ```
 
+## Cover art
+
+Pass `--cover <jpg|png>` to set the artwork shown for the card in the app. It
+is displayed card-shaped (portrait, matching the physical MYO card), not
+square, so build the image to that aspect ratio for the best fit.
+
+```sh
+node src/cli.ts "<url>" --card <cardId> --cover ./covers/peter-rabbit.jpg
+```
+
 ## Troubleshooting
 
 **"Sign in to confirm you're not a bot"**
