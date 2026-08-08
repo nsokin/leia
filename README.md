@@ -249,6 +249,20 @@ chapter) or an existing Yoto icon reference such as
 are listed at [yoto.dev/icons/using-icons](https://yoto.dev/icons/using-icons/).
 Cards work fine without icons; they just show the default.
 
+For a different icon per chapter, use `--icons <dir>` instead: a directory of
+16x16 PNGs, one per selected track. Files are matched to tracks by sorted
+filename order, so name them to sort the way the tracks are numbered in
+`--list`, e.g. `01-peter-rabbit.png`, `02-tom-kitten.png`. The count must match
+the number of selected tracks exactly, or the command fails rather than
+guessing which icon belongs to which chapter. Uploads are cached in
+`~/.leia/icon-cache.json` by file hash, so re-running the same build does not
+re-upload unchanged art, and a re-run that omits `--icons` keeps whatever
+icons a manifest already has instead of clearing them.
+
+```sh
+node src/cli.ts "<url>" --all --spoken --title "Peter Rabbit" --icons ./icons
+```
+
 ## Troubleshooting
 
 **"Sign in to confirm you're not a bot"**

@@ -51,6 +51,23 @@ test('replaces matching manifest items without changing their order', () => {
   assert.deepEqual(mergeItems([first, second], [replacement]), [replacement, second])
 })
 
+test('preserves an existing icon when a re-run does not resolve one', () => {
+  const withIcon: ManifestItem = { ...first, icon: 'yoto:#existing' }
+  const freshlyBuilt = { ...first, title: 'Re-fetched title' }
+
+  const [merged] = mergeItems([withIcon], [freshlyBuilt])
+  assert.equal(merged!.icon, 'yoto:#existing')
+  assert.equal(merged!.title, 'Re-fetched title')
+})
+
+test('overwrites an existing icon when the incoming item sets a new one', () => {
+  const withIcon: ManifestItem = { ...first, icon: 'yoto:#old' }
+  const withNewIcon: ManifestItem = { ...first, icon: 'yoto:#new' }
+
+  const [merged] = mergeItems([withIcon], [withNewIcon])
+  assert.equal(merged!.icon, 'yoto:#new')
+})
+
 test('round-trips a manifest through disk', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'leia-test-'))
   const file = path.join(directory, 'cards', 'example.json')

@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { accountFromToken, createTokenProvider, forceLogin, logout, resolveClientId } from './auth.ts'
+import { resolveChapterIcons } from './icons.ts'
 import {
   fetchMp3,
   listSource,
@@ -48,6 +49,7 @@ Options
   --select <spec>        Pick without prompting, e.g. "1-5,8,11-13"
   --title <text>         Card title (defaults to the playlist title)
   --icon <png|yoto:#id>  16x16 PNG to upload, or an existing Yoto icon ref
+  --icons <dir>          Per-chapter 16x16 PNGs, matched to tracks by filename order
   --card <cardId>        Update this card instead of creating a new one
   --append               Add to what the saved manifest already holds
   --strip <regex>        Cut boilerplate out of chapter titles, case-insensitive
@@ -68,6 +70,7 @@ type Options = {
   select?: string
   title?: string
   icon?: string
+  icons?: string
   card?: string
   append: boolean
   workdir: string
@@ -102,6 +105,7 @@ function parse(): Parsed {
       select: { type: 'string' },
       title: { type: 'string' },
       icon: { type: 'string' },
+      icons: { type: 'string' },
       card: { type: 'string' },
       append: { type: 'boolean', default: false },
       workdir: { type: 'string', default: './downloads' },
@@ -159,6 +163,7 @@ function parse(): Parsed {
       select: values.select,
       title: values.title,
       icon: values.icon,
+      icons: values.icons,
       card: values.card,
       append: values.append === true,
       workdir: path.resolve(values.workdir ?? './downloads'),
@@ -479,6 +484,12 @@ async function main(): Promise<void> {
   const client = new YotoClient(getToken)
   const account = accountFromToken(await getToken())
   const icon = await resolveIcon(client, options.icon)
+  const chapterIcons = options.icons
+    ? await resolveChapterIcons(client, path.resolve(options.icons), selected.length, account)
+    : null
+  const iconBySourceId = chapterIcons
+    ? new Map(selected.map((track, index) => [track.id, chapterIcons[index]!]))
+    : null
   const cache = await readCache()
 
   // Uploads run one at a time: transcoding is the slow part and Yoto asks for
@@ -502,6 +513,8 @@ async function main(): Promise<void> {
       info(`${position} ${track.title}  ${formatDuration(media.duration)}`)
     }
 
+    const chapterIcon = iconBySourceId?.get(track.id)
+
     items.push({
       sourceId: track.id,
       title: cleanTitle(track.title, options.strip),
@@ -510,6 +523,7 @@ async function main(): Promise<void> {
       fileSize: media.fileSize,
       channels: media.channels,
       format: media.format,
+      ...(chapterIcon ? { icon: chapterIcon } : {}),
     })
   }
 
