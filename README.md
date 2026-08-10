@@ -26,6 +26,21 @@ Leia runs on macOS, Linux, and Windows. Install Node 22.18 or newer, yt-dlp,
 and FFmpeg, then make sure all three are available on your `PATH`. There is no
 build step: Node runs the TypeScript directly.
 
+On macOS, Homebrew installs both in one line:
+
+```sh
+brew install yt-dlp ffmpeg
+```
+
+On Ubuntu/Debian, apt has FFmpeg but its yt-dlp package lags upstream, so pull
+yt-dlp straight from its release binary:
+
+```sh
+sudo apt install ffmpeg
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
+```
+
 ```sh
 git clone https://github.com/nsokin/leia.git
 cd leia
