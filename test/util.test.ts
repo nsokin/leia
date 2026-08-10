@@ -20,6 +20,14 @@ test('parses selections and rejects invalid positions', () => {
   assert.throws(() => parseSelection('wat', 5), /Cannot parse/)
 })
 
+test('keeps the selection in the order it was written', () => {
+  // Playlists uploaded out of sequence need this: the spec is the running order.
+  assert.deepEqual(parseSelection('9,3,7', 10), [8, 2, 6])
+  assert.deepEqual(parseSelection('5,1-3', 5), [4, 0, 1, 2])
+  // A repeat keeps its first position rather than jumping to the later one.
+  assert.deepEqual(parseSelection('4,2,4', 5), [3, 1])
+})
+
 test('cleans titles before creating duplicate keys', () => {
   const strip = /show name|full episode|kids cartoon/gi
   assert.equal(cleanTitle('Show Name | The Big Day - Full Episode | Kids Cartoon', strip), 'The Big Day')

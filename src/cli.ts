@@ -45,12 +45,16 @@ Options
   --list                 Enumerate only: durations, duplicates, cards needed
   --dedupe               Drop repeat uploads of the same title
   --all                  Take every track, skip the picker
-  --select <spec>        Pick without prompting, e.g. "1-5,8,11-13"
+  --select <spec>        Pick without prompting, in the order written,
+                         e.g. "1-5,8,11-13" or "9,3,7" to reorder
   --title <text>         Card title (defaults to the playlist title)
   --icon <png|yoto:#id>  16x16 PNG to upload, or an existing Yoto icon ref
   --card <cardId>        Update this card instead of creating a new one
   --append               Add to what the saved manifest already holds
+  --number               Prefix chapter titles with their position, "01. Snow"
   --strip <regex>        Cut boilerplate out of chapter titles, case-insensitive
+  --titles <file>        JSON of {"<source id>": "Chapter title"} overrides
+  --icons <file>         JSON of {"<source id>": "<png|yoto:#id>"} per chapter
   --bitrate <kbps>       Force an MP3 bitrate, e.g. 96 (default: best quality)
   --spoken               Preset for audiobooks: 64 kbps mono, much smaller files
   --workdir <dir>        Where MP3s land (default ./downloads)
@@ -70,6 +74,9 @@ type Options = {
   icon?: string
   card?: string
   append: boolean
+  number: boolean
+  titlesFile?: string
+  iconsFile?: string
   workdir: string
   cards: string
   concurrency: number
@@ -104,6 +111,9 @@ function parse(): Parsed {
       icon: { type: 'string' },
       card: { type: 'string' },
       append: { type: 'boolean', default: false },
+      number: { type: 'boolean', default: false },
+      titles: { type: 'string' },
+      icons: { type: 'string' },
       workdir: { type: 'string', default: './downloads' },
       cards: { type: 'string', default: './cards' },
       concurrency: { type: 'string', default: '3' },
@@ -161,6 +171,9 @@ function parse(): Parsed {
       icon: values.icon,
       card: values.card,
       append: values.append === true,
+      number: values.number === true,
+      titlesFile: values.titles,
+      iconsFile: values.icons,
       workdir: path.resolve(values.workdir ?? './downloads'),
       cards: path.resolve(values.cards ?? './cards'),
       concurrency,
@@ -195,14 +208,18 @@ function cardsNeeded(seconds: number, bitrateKbps: number): number {
   return estimateBytes(seconds, bitrateKbps) / MAX_BYTES_PER_CARD
 }
 
-function showListing(listing: SourceListing, options: Options): void {
+function showListing(
+  listing: SourceListing,
+  options: Options,
+  titles: Record<string, string> = {},
+): void {
   const duplicates = findDuplicates(listing.tracks, options.strip)
   const bitrate = options.bitrate ?? 128
 
   console.log(`${listing.title}\n`)
   for (const [index, track] of listing.tracks.entries()) {
     const repeat = duplicates[index]
-    const title = cleanTitle(track.title, options.strip)
+    const title = titles[track.id] ?? cleanTitle(track.title, options.strip)
     console.log(
       `${String(index + 1).padStart(4)}  ${formatDuration(track.duration).padStart(7)}  ` +
         `${title.slice(0, 58).padEnd(58)}${repeat ? `  repeat of ${repeat}` : ''}`,
@@ -314,6 +331,100 @@ async function writeCache(cache: MediaCache): Promise<void> {
   }
 }
 
+/**
+ * Chapter titles keyed by source id, for playlists whose own titles carry no
+ * usable name. Uploads numbered "Episode 24" with the real name nowhere in the
+ * metadata are the case this exists for: no --strip can recover what was never
+ * there. Keyed by source id rather than position so the file survives the
+ * playlist being reordered or added to.
+ */
+async function readIdMap(file: string | undefined, flag: string): Promise<Record<string, string>> {
+  if (!file) return {}
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await readFile(path.resolve(file), 'utf8'))
+  } catch (error) {
+    throw new Error(`Could not read ${flag} file ${file}: ${(error as Error).message}`)
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${flag} must be a JSON object of {"<source id>": "..."}`)
+  }
+
+  const map: Record<string, string> = {}
+  for (const [id, value] of Object.entries(parsed)) {
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error(`${flag} entry "${id}" must be a non-empty string`)
+    }
+    map[id] = value.trim()
+  }
+  return map
+}
+
+/**
+ * Per-chapter icons keyed by source id. Values are either an existing Yoto ref
+ * ("yoto:#<mediaId>") or a path to a PNG, which is uploaded once and reused for
+ * every chapter naming it. Anything not listed falls back to --icon, so a card
+ * can mix a few specific icons with one default for the rest.
+ *
+ * Local paths are checked here, before the download, because discovering a
+ * typo after an hour of fetching helps nobody.
+ */
+async function readIconSpecs(file: string | undefined): Promise<Record<string, string>> {
+  const specs = await readIdMap(file, '--icons')
+
+  for (const [id, spec] of Object.entries(specs)) {
+    if (spec.startsWith('yoto:#')) continue
+    try {
+      await stat(path.resolve(spec))
+    } catch {
+      throw new Error(`--icons entry "${id}" points at a file that is not there: ${spec}`)
+    }
+  }
+  return specs
+}
+
+/**
+ * Upload each distinct PNG once, and map every source id onto a Yoto ref.
+ *
+ * Scoped to the tracks in this run. An icons file usually covers a whole card,
+ * so a run that rebuilds part of one would otherwise upload artwork for
+ * chapters it is not touching, twice over across two runs.
+ */
+async function uploadIcons(
+  client: YotoClient,
+  specs: Record<string, string>,
+  wanted: Iterable<string>,
+): Promise<Record<string, string>> {
+  const needed = new Set(wanted)
+  const byPath = new Map<string, string>()
+  const resolved: Record<string, string> = {}
+
+  for (const [id, spec] of Object.entries(specs)) {
+    if (!needed.has(id)) continue
+    if (spec.startsWith('yoto:#')) {
+      resolved[id] = spec
+      continue
+    }
+
+    const file = path.resolve(spec)
+    let ref = byPath.get(file)
+    if (!ref) {
+      status(`  uploading icon ${path.basename(file)} ...`)
+      ref = `yoto:#${await client.uploadIcon(await readFile(file))}`
+      byPath.set(file, ref)
+    }
+    resolved[id] = ref
+  }
+
+  if (byPath.size > 0) {
+    clearStatus()
+    info(`Uploaded ${byPath.size} icon(s).`)
+  }
+  return resolved
+}
+
 async function resolveIcon(client: YotoClient, icon: string | undefined): Promise<string | undefined> {
   if (!icon) return undefined
   if (icon.startsWith('yoto:#')) return icon
@@ -380,12 +491,17 @@ async function main(): Promise<void> {
     mono: options.mono,
   }
 
+  // Read before the download rather than at upload time: a typo in the path or
+  // the JSON should cost a second, not an hour of fetching.
+  const titles = await readIdMap(options.titlesFile, '--titles')
+  const iconSpecs = await readIconSpecs(options.iconsFile)
+
   info('Reading the playlist ...')
   const listing = await listSource(url, yt)
 
   if (options.list) {
     clearStatus()
-    showListing(listing, options)
+    showListing(listing, options, titles)
     return
   }
 
@@ -405,7 +521,7 @@ async function main(): Promise<void> {
 
   for (const [index, track] of candidates.entries()) {
     console.log(
-      `${String(index + 1).padStart(3)}. ${cleanTitle(track.title, options.strip)}` +
+      `${String(index + 1).padStart(3)}. ${titles[track.id] ?? cleanTitle(track.title, options.strip)}` +
         `  [${formatDuration(track.duration)}]`,
     )
   }
@@ -479,6 +595,11 @@ async function main(): Promise<void> {
   const client = new YotoClient(getToken)
   const account = accountFromToken(await getToken())
   const icon = await resolveIcon(client, options.icon)
+  const icons = await uploadIcons(
+    client,
+    iconSpecs,
+    files.map(({ track }) => track.id),
+  )
   const cache = await readCache()
 
   // Uploads run one at a time: transcoding is the slow part and Yoto asks for
@@ -504,12 +625,13 @@ async function main(): Promise<void> {
 
     items.push({
       sourceId: track.id,
-      title: cleanTitle(track.title, options.strip),
+      title: titles[track.id] ?? cleanTitle(track.title, options.strip),
       sha256: media.sha256,
       duration: media.duration,
       fileSize: media.fileSize,
       channels: media.channels,
       format: media.format,
+      ...(icons[track.id] ? { icon: icons[track.id] } : {}),
     })
   }
 
@@ -538,7 +660,7 @@ async function main(): Promise<void> {
     )
   }
 
-  const chapters = toChapters(finalItems, icon)
+  const chapters = toChapters(finalItems, icon, options.number)
   const totalDuration = finalItems.reduce((sum, item) => sum + item.duration, 0)
   const totalBytes = finalItems.reduce((sum, item) => sum + item.fileSize, 0)
   const cardId = options.card ?? existing?.cardId ?? undefined

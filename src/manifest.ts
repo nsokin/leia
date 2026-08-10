@@ -40,17 +40,33 @@ export async function writeManifest(file: string, manifest: Manifest): Promise<v
 /**
  * One chapter per item, so the player's back and forward buttons step between
  * tracks. Keys and overlay labels are renumbered from the final ordering.
+ *
+ * `numbered` also puts the position in the chapter title itself. overlayLabel
+ * only reaches the player's screen, so without this the app's chapter list
+ * gives no clue which track is playing. The track inside keeps the clean title:
+ * between the two, every surface shows a number and none shows it twice.
+ *
+ * Numbering here rather than in the stored title keeps it correct. Appending or
+ * reordering renumbers everything on the next push instead of leaving stale
+ * prefixes behind.
  */
-export function toChapters(items: ManifestItem[], fallbackIcon?: string): YotoChapter[] {
+export function toChapters(
+  items: ManifestItem[],
+  fallbackIcon?: string,
+  numbered = false,
+): YotoChapter[] {
+  const width = String(items.length).length
+
   return items.map((item, index) => {
     const key = chapterKey(index + 1)
     const label = String(index + 1)
     const icon = item.icon ?? fallbackIcon
     const display = icon ? { display: { icon16x16: icon } } : {}
+    const title = numbered ? `${label.padStart(width, '0')}. ${item.title}` : item.title
 
     return {
       key,
-      title: item.title,
+      title,
       overlayLabel: label,
       ...display,
       tracks: [

@@ -22,6 +22,28 @@ const second: ManifestItem = {
   sha256: 'b'.repeat(64),
 }
 
+test('numbers chapter titles by final position, padded to the track count', () => {
+  const chapters = toChapters([first, second], undefined, true)
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.title),
+    ['1. First chapter', '2. Second chapter'],
+  )
+
+  // The track inside keeps the clean title, so nothing renders "01. 01. ...".
+  assert.equal(chapters[0]?.tracks[0]?.title, 'First chapter')
+
+  // Padding follows the count, so a 10 plus item card sorts correctly by name.
+  const many = Array.from({ length: 12 }, (_, i) => ({ ...first, sourceId: `s${i}` }))
+  const padded = toChapters(many, undefined, true)
+  assert.equal(padded[0]?.title, '01. First chapter')
+  assert.equal(padded[11]?.title, '12. First chapter')
+})
+
+test('leaves titles alone unless numbering is asked for', () => {
+  assert.equal(toChapters([first])[0]?.title, 'First chapter')
+  assert.equal(toChapters([first], undefined, false)[0]?.title, 'First chapter')
+})
+
 test('creates one labelled Yoto chapter per manifest item', () => {
   const [chapter] = toChapters([first], 'yoto:#fallback')
   assert.deepEqual(chapter, {

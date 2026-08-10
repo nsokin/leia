@@ -208,6 +208,42 @@ node src/cli.ts "<url>" --dry-run
 
 Full option list: `node src/cli.ts --help`
 
+## Chapter titles and running order
+
+Three flags exist for the case where a playlist's own titles and ordering are
+not what you want on the card.
+
+`--select` returns tracks **in the order you write them**, so a playlist
+uploaded out of sequence can still come out in order. `--select "9,3,7"` puts
+track 9 first. Ranges expand ascending, and repeating a position keeps its first
+place rather than moving it.
+
+`--number` prefixes each chapter title with its position, `01. Snow`, padded to
+the width of the track count. Without it the number only reaches the player's
+screen, via `overlayLabel`, and the app's chapter list gives no clue which track
+is playing. The track inside the chapter keeps the clean title, so nothing ever
+renders `01. 01. Snow`. Numbering happens at push time from the final ordering,
+so appending later renumbers everything rather than leaving stale prefixes.
+
+`--titles <file>` overrides chapter titles from a JSON file of
+`{"<source id>": "Chapter title"}`. This is for uploads whose real names are
+nowhere in the metadata, the `Season 2 | Episode 24` kind, where no `--strip`
+can recover a name that was never there. Keys are source ids rather than
+positions, so the file survives the playlist being reordered or added to, and
+any id you leave out falls back to the usual cleaned title.
+
+```sh
+node src/cli.ts "<url>" \
+  --select "4,10,22,38" --number \
+  --titles cards/my-card.titles.json
+```
+
+`--icons <file>` does the same for artwork, a JSON file of
+`{"<source id>": "<png path or yoto:#id>"}`. Each distinct PNG uploads once
+however many chapters point at it, and any id you leave out falls back to
+`--icon`, so a card can mix specific icons with one default for the rest. Yoto
+displays these at 16x16, so pixel art reads well and photographs do not.
+
 ## How it maps onto Yoto
 
 One selected track becomes one chapter containing one track, so the player's

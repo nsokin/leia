@@ -62,6 +62,12 @@ export function chapterKey(index1: number): string {
 /**
  * Parse a selection spec like "1-5,8,11-13" into zero-based indices.
  * Returns null for an empty spec, meaning "everything".
+ *
+ * The order written is the order returned, so "9,3,7" puts track 9 first. That
+ * matters for playlists uploaded out of sequence: writing the positions in
+ * episode order is the only way to get a card whose chapters run in that order.
+ * Ranges still expand ascending, and a position repeated across the spec keeps
+ * its first place rather than moving.
  */
 export function parseSelection(spec: string, count: number): number[] | null {
   const trimmed = spec.trim()
@@ -89,7 +95,7 @@ export function parseSelection(spec: string, count: number): number[] | null {
     }
     picked.add(n - 1)
   }
-  return [...picked].sort((a, b) => a - b)
+  return [...picked]
 }
 
 /**

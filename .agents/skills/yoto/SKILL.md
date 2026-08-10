@@ -37,11 +37,17 @@ truncate, and do not start a multi-hour job without agreement.
 **2. Are there duplicates?** If `--list` marks repeats, add `--dedupe`. Mention
 how many it drops and how much runtime that saves.
 
-**3. Which items?** For a child's card, prefer individual episodes over
-hour-long compilations: each item becomes its own chapter, so short episodes
-give buttons that skip somewhere useful. A card of six 10-minute episodes is far
-more usable than one 60-minute block. Pass the choice as `--select "1,2,3,9-12"`
-using the positions from the listing.
+**3. Which items, and in what order?** For a child's card, prefer individual
+episodes over hour-long compilations: each item becomes its own chapter, so
+short episodes give buttons that skip somewhere useful. A card of six 10-minute
+episodes is far more usable than one 60-minute block. Pass the choice as
+`--select "1,2,3,9-12"` using the positions from the listing.
+
+`--select` keeps the order you write, so when a playlist is uploaded out of
+sequence, work out the right running order and write the positions in it. A
+season listed as episode 24, 40, 1, 13 becomes a card in episode order only if
+you ask for it. Add `--number` so the position shows in the app's chapter list,
+not just on the player's screen.
 
 **4. What will the chapters be called?** This matters more than it sounds,
 because the chapter title is what shows in the Yoto app. Channel titles are
@@ -54,15 +60,38 @@ Episode" and "Cartoon for Kids" style boilerplate, and any channel suffix. The
 tool tidies up the separators left behind. Check the result in `--list` output
 before committing to a run: `--list` shows cleaned titles.
 
+Note that `--strip` is compiled without the unicode flag, so write emoji ranges
+as surrogate pairs, `[\uD800-\uDBFF][\uDC00-\uDFFF]`, not as `\u{1F300}`.
+
+Some uploads have no name to recover, only `Season 2 | Episode 24`. No regex
+fixes that. Find the real episode names, then pass them with `--titles <file>`,
+a JSON map of `{"<source id>": "Chapter title"}`. Be careful mapping names by
+episode number: a broadcast list that merges double episodes into one entry
+drifts out of step with an uploader that numbers each half separately. Check
+where the two agree before trusting the mapping, and say plainly that the names
+are inferred rather than verified from the audio.
+
+**5. Icons?** `--icons <file>` takes `{"<source id>": "<png|yoto:#id>"}` and
+gives each chapter its own artwork. Yoto renders these at 16x16, so use art
+drawn at icon size; a photo or a large render turns to mush. Check the pixel
+dimensions of anything you download and reject what is bigger than about 32x32.
+Render your picks as a contact sheet and look at them before pushing, because
+matching a filename to what it actually depicts is exactly the step that goes
+wrong silently.
+
 ## Then build it
 
 ```sh
 node src/cli.ts "<url>" \
   --select "1,2,3,4,9,10" \
-  --dedupe --spoken \
+  --dedupe --spoken --number \
   --title "Card name" \
   --strip "<boilerplate regex>"
 ```
+
+Note that `--dedupe` renumbers the list, so its positions are not the ones
+`--list` showed. Either read the positions off a deduped run, or leave
+`--dedupe` off and write out the positions you want from the `--list` numbering.
 
 - `--spoken` (64 kbps mono) for speech: audiobooks, stories, episodes. Halves
   the size with no audible cost.
