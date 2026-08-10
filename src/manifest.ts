@@ -87,12 +87,17 @@ export function toChapters(
   })
 }
 
-/** Merge new items into existing ones, replacing by source id and keeping order. */
+/**
+ * Merge new items into existing ones, matched by source id, keeping order.
+ * A matched item is overlaid onto the existing one field by field, not
+ * replaced wholesale, so a re-run that does not resolve an icon (or any other
+ * optional field) never wipes one that was set on an earlier run.
+ */
 export function mergeItems(existing: ManifestItem[], incoming: ManifestItem[]): ManifestItem[] {
   const merged = [...existing]
   for (const item of incoming) {
     const at = merged.findIndex((candidate) => candidate.sourceId === item.sourceId)
-    if (at >= 0) merged[at] = item
+    if (at >= 0) merged[at] = { ...merged[at], ...item }
     else merged.push(item)
   }
   return merged

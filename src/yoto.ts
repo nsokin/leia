@@ -39,6 +39,7 @@ export type ContentPayload = {
   content: { chapters: YotoChapter[] }
   metadata: {
     media: { duration: number; fileSize: number; readableFileSize: number }
+    cover?: { imageL: string }
   }
 }
 
@@ -160,6 +161,22 @@ export class YotoClient {
     const mediaId = body?.displayIcon?.mediaId ?? body?.mediaId
     if (!mediaId) throw new Error('Yoto did not return a mediaId for the uploaded icon')
     return mediaId
+  }
+
+  /** Cover art must be raw binary JPEG/PNG, not multipart form-data. */
+  async uploadCoverImage(image: Buffer, contentType: string): Promise<string> {
+    const body = (await this.#request(
+      '/media/coverImage/user/me/upload?autoconvert=true&coverType=default',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: new Uint8Array(image),
+      },
+    )) as { coverImage?: { mediaUrl?: string } }
+
+    const mediaUrl = body?.coverImage?.mediaUrl
+    if (!mediaUrl) throw new Error('Yoto did not return a mediaUrl for the uploaded cover image')
+    return mediaUrl
   }
 
   /** The MYO playlists already in this account's library. */

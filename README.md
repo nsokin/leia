@@ -238,11 +238,47 @@ node src/cli.ts "<url>" \
   --titles cards/my-card.titles.json
 ```
 
-`--icons <file>` does the same for artwork, a JSON file of
-`{"<source id>": "<png path or yoto:#id>"}`. Each distinct PNG uploads once
-however many chapters point at it, and any id you leave out falls back to
-`--icon`, so a card can mix specific icons with one default for the rest. Yoto
-displays these at 16x16, so pixel art reads well and photographs do not.
+## Per-chapter icons
+
+`--icon` sets one fallback icon for the whole card. `--icons` gives each chapter
+its own, and takes either of two forms, because they suit different jobs.
+
+A **directory** of 16x16 PNGs, matched to the selection by sorted filename.
+Name them to sort the way the tracks are numbered, `01-peter-rabbit.png`,
+`02-tom-kitten.png`. The count must match the selection exactly, or the command
+fails rather than guessing which icon belongs to which chapter. This is the
+quick way to dress a card you are building in one go.
+
+```sh
+node src/cli.ts "<url>" --all --spoken --title "Peter Rabbit" --icons ./icons
+```
+
+A **JSON file** of `{"<source id>": "<png path or yoto:#id>"}`, which binds art
+to the track rather than to its position, so it survives the selection being
+reordered or added to, and it can point at icons already uploaded to Yoto.
+
+```sh
+node src/cli.ts "<url>" --select "4,10,22" --icons cards/my-card.icons.json
+```
+
+Either way, uploads are cached in `~/.leia/icon-cache.json` by account and file
+hash, so re-running does not re-upload unchanged art, and a run that omits
+`--icons` keeps whatever icons the manifest already has rather than clearing
+them. Anything not covered falls back to `--icon`, so a card can mix specific
+icons with one default for the rest.
+
+Yoto renders these at 16x16, so use art drawn at icon size. A photograph or a
+large render turns to mush.
+
+## Cover art
+
+`--cover <jpg|png>` sets the artwork shown for the card in the app. It is
+displayed card-shaped (portrait, matching the physical MYO card), not square, so
+build the image to that aspect ratio for the best fit.
+
+```sh
+node src/cli.ts "<url>" --card <cardId> --cover ./covers/peter-rabbit.jpg
+```
 
 ## How it maps onto Yoto
 

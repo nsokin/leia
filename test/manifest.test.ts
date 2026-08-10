@@ -22,6 +22,18 @@ const second: ManifestItem = {
   sha256: 'b'.repeat(64),
 }
 
+test('keeps an existing icon when a re-run does not resolve one', () => {
+  // A plain re-run builds items without an icon field. Overlaying rather than
+  // replacing is what stops that wiping art set on an earlier run.
+  const withIcon: ManifestItem = { ...first, icon: 'yoto:#keep-me' }
+  const [merged] = mergeItems([withIcon], [first])
+  assert.equal(merged?.icon, 'yoto:#keep-me')
+
+  // An incoming icon still wins when there is one.
+  const [replaced] = mergeItems([withIcon], [{ ...first, icon: 'yoto:#newer' }])
+  assert.equal(replaced?.icon, 'yoto:#newer')
+})
+
 test('numbers chapter titles by final position, padded to the track count', () => {
   const chapters = toChapters([first, second], undefined, true)
   assert.deepEqual(

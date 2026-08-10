@@ -71,13 +71,20 @@ drifts out of step with an uploader that numbers each half separately. Check
 where the two agree before trusting the mapping, and say plainly that the names
 are inferred rather than verified from the audio.
 
-**5. Icons?** `--icons <file>` takes `{"<source id>": "<png|yoto:#id>"}` and
-gives each chapter its own artwork. Yoto renders these at 16x16, so use art
-drawn at icon size; a photo or a large render turns to mush. Check the pixel
-dimensions of anything you download and reject what is bigger than about 32x32.
-Render your picks as a contact sheet and look at them before pushing, because
-matching a filename to what it actually depicts is exactly the step that goes
-wrong silently.
+**5. Icons?** `--icons` gives each chapter its own artwork, either as a
+directory of PNGs matched by sorted filename, or as a JSON file of
+`{"<source id>": "<png|yoto:#id>"}`. Prefer the JSON form whenever the card is
+built from more than one run or the selection might be reordered, since the
+directory form is positional and silently shifts if the selection changes.
+
+Yoto renders these at 16x16, so use art drawn at icon size; a photo or a large
+render turns to mush. Check the pixel dimensions of anything you download and
+reject what is bigger than about 32x32. Render your picks as a contact sheet
+and look at them before pushing, because matching a filename to what it
+actually depicts is exactly the step that goes wrong silently: a file tagged
+"ladybird" turned out to be a sunflower, and only the render caught it.
+
+`--cover <jpg|png>` sets the card's own artwork in the app, shown portrait.
 
 ## Then build it
 

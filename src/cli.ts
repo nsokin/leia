@@ -12,6 +12,7 @@ import {
   type SourceTrack,
   type YtOptions,
 } from './source.ts'
+import { planChapterIcons, uploadChapterIcons } from './icons.ts'
 import { mergeItems, readManifest, toChapters, writeManifest, type ManifestItem } from './manifest.ts'
 import { YotoClient, type TranscodedAudio } from './yoto.ts'
 import {
@@ -54,7 +55,9 @@ Options
   --number               Prefix chapter titles with their position, "01. Snow"
   --strip <regex>        Cut boilerplate out of chapter titles, case-insensitive
   --titles <file>        JSON of {"<source id>": "Chapter title"} overrides
-  --icons <file>         JSON of {"<source id>": "<png|yoto:#id>"} per chapter
+  --icons <dir|file>     Per-chapter icons: a directory of 16x16 PNGs matched
+                         by filename order, or JSON of {"<source id>": "<png>"}
+  --cover <jpg|png>      Cover art shown for the card in the app, card-shaped
   --bitrate <kbps>       Force an MP3 bitrate, e.g. 96 (default: best quality)
   --spoken               Preset for audiobooks: 64 kbps mono, much smaller files
   --workdir <dir>        Where MP3s land (default ./downloads)
@@ -76,7 +79,8 @@ type Options = {
   append: boolean
   number: boolean
   titlesFile?: string
-  iconsFile?: string
+  iconsPath?: string
+  cover?: string
   workdir: string
   cards: string
   concurrency: number
@@ -114,6 +118,7 @@ function parse(): Parsed {
       number: { type: 'boolean', default: false },
       titles: { type: 'string' },
       icons: { type: 'string' },
+      cover: { type: 'string' },
       workdir: { type: 'string', default: './downloads' },
       cards: { type: 'string', default: './cards' },
       concurrency: { type: 'string', default: '3' },
@@ -173,7 +178,8 @@ function parse(): Parsed {
       append: values.append === true,
       number: values.number === true,
       titlesFile: values.titles,
-      iconsFile: values.icons,
+      iconsPath: values.icons,
+      cover: values.cover,
       workdir: path.resolve(values.workdir ?? './downloads'),
       cards: path.resolve(values.cards ?? './cards'),
       concurrency,
@@ -362,67 +368,17 @@ async function readIdMap(file: string | undefined, flag: string): Promise<Record
   return map
 }
 
-/**
- * Per-chapter icons keyed by source id. Values are either an existing Yoto ref
- * ("yoto:#<mediaId>") or a path to a PNG, which is uploaded once and reused for
- * every chapter naming it. Anything not listed falls back to --icon, so a card
- * can mix a few specific icons with one default for the rest.
- *
- * Local paths are checked here, before the download, because discovering a
- * typo after an hour of fetching helps nobody.
- */
-async function readIconSpecs(file: string | undefined): Promise<Record<string, string>> {
-  const specs = await readIdMap(file, '--icons')
+async function resolveCover(client: YotoClient, cover: string | undefined): Promise<string | undefined> {
+  if (!cover) return undefined
 
-  for (const [id, spec] of Object.entries(specs)) {
-    if (spec.startsWith('yoto:#')) continue
-    try {
-      await stat(path.resolve(spec))
-    } catch {
-      throw new Error(`--icons entry "${id}" points at a file that is not there: ${spec}`)
-    }
-  }
-  return specs
-}
+  const ext = path.extname(cover).toLowerCase()
+  const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null
+  if (!contentType) throw new Error(`--cover must be a .jpg or .png file, got "${cover}"`)
 
-/**
- * Upload each distinct PNG once, and map every source id onto a Yoto ref.
- *
- * Scoped to the tracks in this run. An icons file usually covers a whole card,
- * so a run that rebuilds part of one would otherwise upload artwork for
- * chapters it is not touching, twice over across two runs.
- */
-async function uploadIcons(
-  client: YotoClient,
-  specs: Record<string, string>,
-  wanted: Iterable<string>,
-): Promise<Record<string, string>> {
-  const needed = new Set(wanted)
-  const byPath = new Map<string, string>()
-  const resolved: Record<string, string> = {}
-
-  for (const [id, spec] of Object.entries(specs)) {
-    if (!needed.has(id)) continue
-    if (spec.startsWith('yoto:#')) {
-      resolved[id] = spec
-      continue
-    }
-
-    const file = path.resolve(spec)
-    let ref = byPath.get(file)
-    if (!ref) {
-      status(`  uploading icon ${path.basename(file)} ...`)
-      ref = `yoto:#${await client.uploadIcon(await readFile(file))}`
-      byPath.set(file, ref)
-    }
-    resolved[id] = ref
-  }
-
-  if (byPath.size > 0) {
-    clearStatus()
-    info(`Uploaded ${byPath.size} icon(s).`)
-  }
-  return resolved
+  const image = await readFile(path.resolve(cover))
+  const mediaUrl = await client.uploadCoverImage(image, contentType)
+  info('Uploaded cover image')
+  return mediaUrl
 }
 
 async function resolveIcon(client: YotoClient, icon: string | undefined): Promise<string | undefined> {
@@ -494,7 +450,6 @@ async function main(): Promise<void> {
   // Read before the download rather than at upload time: a typo in the path or
   // the JSON should cost a second, not an hour of fetching.
   const titles = await readIdMap(options.titlesFile, '--titles')
-  const iconSpecs = await readIconSpecs(options.iconsFile)
 
   info('Reading the playlist ...')
   const listing = await listSource(url, yt)
@@ -539,6 +494,15 @@ async function main(): Promise<void> {
   }
 
   info(`\nTaking ${selected.length} of ${candidates.length} into "${cardTitle}".\n`)
+
+  // Planned before the download: a miscounted icon directory or a bad path
+  // should cost a second, not an hour of fetching.
+  const iconPlan = options.iconsPath
+    ? await planChapterIcons(
+        options.iconsPath,
+        selected.map((track) => track.id),
+      )
+    : {}
 
   await mkdir(options.workdir, { recursive: true })
 
@@ -595,10 +559,12 @@ async function main(): Promise<void> {
   const client = new YotoClient(getToken)
   const account = accountFromToken(await getToken())
   const icon = await resolveIcon(client, options.icon)
-  const icons = await uploadIcons(
+  const cover = await resolveCover(client, options.cover)
+  const icons = await uploadChapterIcons(
     client,
-    iconSpecs,
+    iconPlan,
     files.map(({ track }) => track.id),
+    account,
   )
   const cache = await readCache()
 
@@ -676,6 +642,7 @@ async function main(): Promise<void> {
         fileSize: totalBytes,
         readableFileSize: Math.round((totalBytes / 1024 / 1024) * 10) / 10,
       },
+      ...(cover ? { cover: { imageL: cover } } : {}),
     },
   })
 
